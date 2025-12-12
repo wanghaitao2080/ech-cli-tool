@@ -365,7 +365,7 @@ show_menu() {
     ╚══════╝ ╚═════╝╚═╝  ╚═╝
     ${PLAIN}"
     echo -e "快捷键已设置为 ${YELLOW}ech${PLAIN} , 下次运行输入 ${YELLOW}ech${PLAIN} 即可"
-    echo -e "当前版本: ${GREEN}${SCRIPT_VER}${PLAIN}  更新状态: ${UPDATE_TIP}"
+    echo -e "当前版本: ${GREEN}${SCRIPT_VER}${PLAIN}  状态: ${UPDATE_TIP}"
     echo -e "------------------------------------------------------"
     echo -e "状态     : $STATUS"
     echo -e "系统     : $OS ($ARCH)"
@@ -380,35 +380,35 @@ show_menu() {
     echo -e "Token        : ${PURPLE}$TOKEN${PLAIN}"
     echo -e "分流模式     : ${YELLOW}$ROUTING${PLAIN}"
     echo -e "------------------------------------------------------"
-    echo -e " ${GREEN}1.${PLAIN} 安装 / 更新客户端"
-    echo -e " ${GREEN}2.${PLAIN} 修改配置"
-    echo -e " ${GREEN}3.${PLAIN} 启动服务"
-    echo -e " ${GREEN}4.${PLAIN} 停止服务"
-    echo -e " ${GREEN}5.${PLAIN} 重启服务"
-    echo -e " ${GREEN}6.${PLAIN} 查看日志"
-    echo -e " ${GREEN}7.${PLAIN} 卸载客户端"
-    echo -e " ${GREEN}8.${PLAIN} 创建快捷指令 (修复)"
-    echo -e " ${GREEN}9.${PLAIN} 更新管理脚本"
+    echo -e " ${GREEN}1.${PLAIN} 安装/更新客户端"
+    echo -e " ${GREEN}2.${PLAIN} 更新脚本"
+    echo -e " ${GREEN}3.${PLAIN} 修改配置"
+    echo -e " ${GREEN}4.${PLAIN} 启动服务"
+    echo -e " ${GREEN}5.${PLAIN} 停止服务"
+    echo -e " ${GREEN}6.${PLAIN} 重启服务"
+    echo -e " ${GREEN}7.${PLAIN} 查看日志"
+    echo -e " ${GREEN}8.${PLAIN} 卸载客户端"
+    echo -e " ${GREEN}9.${PLAIN} 创建快捷指令 (修复)"
     echo -e " ${GREEN}0.${PLAIN} 退出脚本"
     echo -e "------------------------------------------------------"
     read -p "请输入选择 [0-9]: " choice
     
     case $choice in
         1) install_ech ;;
-        2) configure_ech ;;
-        3) systemctl start ech-workers && echo -e "${GREEN}已启动${PLAIN}" ;;
-        4) systemctl stop ech-workers && echo -e "${RED}已停止${PLAIN}" ;;
-        5) systemctl restart ech-workers && echo -e "${GREEN}已重启${PLAIN}" ;;
-        6) view_logs ;;
-        7) 
+        2) update_script ;;
+        3) configure_ech ;;
+        4) systemctl start ech-workers && echo -e "${GREEN}已启动${PLAIN}" ;;
+        5) systemctl stop ech-workers && echo -e "${RED}已停止${PLAIN}" ;;
+        6) systemctl restart ech-workers && echo -e "${GREEN}已重启${PLAIN}" ;;
+        7) view_logs ;;
+        8) 
             systemctl stop ech-workers
             systemctl disable ech-workers
             rm -f $SERVICE_FILE $BIN_PATH /usr/bin/ech
             systemctl daemon-reload
             echo -e "${GREEN}已卸载${PLAIN}"
             ;;
-        8) create_shortcut ;;
-        9) update_script ;;
+        9) create_shortcut ;;
         0) exit 0 ;;
         *) echo -e "${RED}无效选择${PLAIN}" ;;
     esac
