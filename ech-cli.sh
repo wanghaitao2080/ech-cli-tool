@@ -251,10 +251,15 @@ check_status() {
 
 # 获取日志
 view_logs() {
+    echo -e "${YELLOW}正在获取最后 50 行日志...${PLAIN}"
+    # 使用 journalctl 输出最后50行，不使用 -f (follow)，否则会阻塞无法显示下面的统计
+    # 如果用户想实时看，可以提示他们手动用 journalctl -f
+    journalctl -u ech-workers -n 50 --no-pager
+    
     # 尝试提取端口
     CONF_PORT=${LISTEN_ADDR##*:}
     
-    echo -e "------------------------------------------------------"
+    echo -e "\n------------------------------------------------------"
     echo -e "${YELLOW}>>> 当前活跃连接统计${PLAIN}"
     
     CLIENTS=""
@@ -281,8 +286,6 @@ view_logs() {
                  clean_ip=$(echo "$ip" | sed 's/:[0-9]*$//')
                  
                  # 使用 ip-api.com (HTTP) 查询，纯文本格式，增加超时
-                 # 替换为更稳定的 API 或者增加重试。ip-api 很稳定，可能是 curl 参数问题。
-                 # 尝试使用 -L 跟随重定向，-k 忽略证书（如果是https）
                  LOCATION=$(curl -s -m 2 "http://ip-api.com/line/${clean_ip}?fields=country,regionName,city,isp&lang=zh-CN")
                  
                  if [ ! -z "$LOCATION" ]; then
@@ -295,9 +298,7 @@ view_logs() {
          done <<< "$CLIENTS"
     fi
     echo -e "------------------------------------------------------"
-
-    echo -e "${YELLOW}正在获取最后 50 行日志 (按 Ctrl+C 退出)...${PLAIN}"
-    journalctl -u ech-workers -n 50 -f
+    read -p "按回车键返回菜单..."
 }
 
 # 脚本版本
