@@ -12,7 +12,7 @@
 
 旨在为 Linux 用户（尤其是无头服务器/软路由用户）提供最便捷的安装和管理体验。
 
-![Preview](preview.png)
+<img src="preview.png" width="600" alt="Preview" />
 
 ## ✨ 主要特性
 
