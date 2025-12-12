@@ -1,14 +1,9 @@
 # ECH Workers Client CLI Unofficial
 
 > ⚠️ **说明 / Note**  
-> 本项目是 [byJoey/ech-wk](https://github.com/byJoey/ech-wk) 的非官方第三方管理脚本。  
+> 本项目是基于 [byJoey/ech-wk](https://github.com/byJoey/ech-wk) 开发的第三方管理脚本。  
 > 核心代理程序文件 (`ech-workers`) 直接来源于原作者的 Release 发布页。  
 > 感谢原作者 @byJoey 以及底层核心开发 [CF_NAT](https://t.me/CF_NAT)！
-> 
-> This is an unofficial management script for [byJoey/ech-wk](https://github.com/byJoey/ech-wk).  
-> The core binary (`ech-workers`) is downloaded directly from the original author's releases.  
-> Special thanks to @byJoey and the core developer [CF_NAT](https://t.me/CF_NAT)!
-
 ---
 
 这是一个专为 Debian / Ubuntu / Armbian / CentOS 等 Linux 系统设计的 **ECH Workers Client** 命令行管理工具 (CLI)。
@@ -75,6 +70,6 @@ ROUTING="bypass_cn"                        # 分流模式: bypass_cn / global / 
 
 *   核心程序: [byJoey/ech-wk](https://github.com/byJoey/ech-wk)
 *   核心原创: [CF_NAT](https://t.me/CF_NAT)
-*   脚本维护: (lzban8)
+*   脚本维护: lzban8
 
 欢迎提交 Issue 或 Pull Request 来改进此脚本！ 
