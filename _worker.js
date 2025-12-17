@@ -1,20 +1,23 @@
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
 
-// ==================== PROXYIP 配置 ====================
-// 用于解决 CF-to-CF 连接限制（访问 Cloudflare CDN 站点时需要）
-// 格式: 'hostname' 或 'hostname:port'（默认端口 443）
-// 留空则禁用 PROXYIP 功能
-// 可配置多个，用逗号分隔，会按顺序尝试
-const PROXYIP = '';  // 例如: 'proxyip.cmliussss.net' 或 'proxyip.fxxk.dedyn.io'
+// ==================== 环境变量配置说明 ====================
+// 在 Cloudflare Dashboard -> Workers -> 设置 -> 变量 中配置以下环境变量：
+//
+// TOKEN      - 身份验证令牌（可选，留空表示不验证）
+// PROXYIP    - 自定义 PROXYIP（可选，多个用逗号分隔）
+//              例如: 'proxyip.cmliussss.net' 或 'ip1.com,ip2.com'
+//
+// 如果不配置环境变量，将使用下方的默认值
+// ===========================================================
 
-// 默认公共 PROXYIP 列表（当 PROXYIP 为空时使用）
+// 默认公共 PROXYIP 列表（当环境变量 PROXYIP 为空时使用）
 const DEFAULT_PROXYIP_LIST = [
   'proxyip.cmliussss.net',      // cmliu 维护的公共 proxyIP
   'proxyip.fxxk.dedyn.io',      // fxxk 维护的公共 proxyIP
 ];
 
-// CF Fallback IPs（通常是 CF 自己的 IPv6，效果有限）
+// CF Fallback IPs（最后的尝试，效果有限）
 const CF_FALLBACK_IPS = ['[2a00:1098:2b::1:6815:5881]'];
 
 // 复用 TextEncoder，避免重复创建
@@ -25,7 +28,10 @@ import { connect } from 'cloudflare:sockets';
 export default {
   async fetch(request, env, ctx) {
     try {
-      const token = '';
+      // 从环境变量读取配置，如果未设置则使用默认值
+      const token = env.TOKEN || '';
+      const proxyIP = env.PROXYIP || '';
+
       const upgradeHeader = request.headers.get('Upgrade');
 
       if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
@@ -41,7 +47,8 @@ export default {
       const [client, server] = Object.values(new WebSocketPair());
       server.accept();
 
-      handleSession(server).catch(() => safeCloseWebSocket(server));
+      // 将 proxyIP 传递给 handleSession
+      handleSession(server, proxyIP).catch(() => safeCloseWebSocket(server));
 
       // 修复 spread 类型错误
       const responseInit = {
@@ -61,7 +68,7 @@ export default {
   },
 };
 
-async function handleSession(webSocket) {
+async function handleSession(webSocket, proxyIP) {
   let remoteSocket, remoteWriter, remoteReader;
   let isClosed = false;
 
@@ -122,9 +129,9 @@ async function handleSession(webSocket) {
     // 构建尝试列表：直连 -> 用户 PROXYIP -> 默认 PROXYIP -> CF_FALLBACK
     const attempts = [null]; // null 表示直连目标
 
-    // 添加用户配置的 PROXYIP
-    if (PROXYIP) {
-      PROXYIP.split(',').forEach(ip => {
+    // 添加用户配置的 PROXYIP（从环境变量传入）
+    if (proxyIP) {
+      proxyIP.split(',').forEach(ip => {
         const trimmed = ip.trim();
         if (trimmed) attempts.push(trimmed);
       });

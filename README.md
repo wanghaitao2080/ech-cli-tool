@@ -57,18 +57,19 @@
 3. 将本项目的 `_worker.js` 内容复制到编辑器中
 4. 点击 `Save and Deploy`
 
-### PROXYIP 配置
+### 环境变量配置（推荐）
 
-在 `_worker.js` 顶部可以配置 PROXYIP：
+在 Cloudflare Dashboard 中配置环境变量，无需修改代码：
 
-```javascript
-// 方式一：使用默认公共 PROXYIP（推荐）
-const PROXYIP = '';  // 留空，自动使用内置的公共 PROXYIP 列表
+1. 进入 Worker 详情页 → `设置` → `变量`
+2. 添加以下环境变量：
 
-// 方式二：自定义 PROXYIP
-const PROXYIP = 'your-proxyip.com';  // 单个
-const PROXYIP = 'ip1.com,ip2.com';   // 多个，用逗号分隔
-```
+| 变量名 | 说明 | 示例值 |
+|--------|------|--------|
+| `TOKEN` | 身份验证令牌（可选） | `your-secret-token` |
+| `PROXYIP` | 自定义 PROXYIP（可选，多个用逗号分隔） | `proxyip.cmliussss.net` |
+
+> 💡 如果不配置环境变量，将自动使用内置的公共 PROXYIP 列表
 
 **内置公共 PROXYIP 列表：**
 - `proxyip.cmliussss.net` - cmliu 维护
