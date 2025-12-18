@@ -234,13 +234,29 @@ install_ech() {
     
     echo -e "${YELLOW}正在获取最新版本信息...${PLAIN}"
     
+    # 先检测网络环境
+    IS_CN=0
+    if ! curl -s -m 2 https://www.google.com >/dev/null; then
+        IS_CN=1
+        echo -e "${YELLOW}网络环境: 中国大陆 (或无法访问 Google)，使用镜像加速${PLAIN}"
+    else
+        echo -e "${GREEN}网络环境: 国际互联${PLAIN}"
+    fi
+    
+    # 根据网络环境选择 API 地址
+    if [ "$IS_CN" -eq 1 ]; then
+        API_URL="https://gh-proxy.org/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+    else
+        API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+    fi
+    
     # 获取 Release JSON
-    RELEASE_JSON=$(curl -s "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")
+    RELEASE_JSON=$(curl -s "$API_URL")
     
     # 尝试使用 jq 解析
     LATEST_URL=""
     if command -v jq >/dev/null 2>&1; then
-        LATEST_URL=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name | contains(\"linux-${ARCH}\")) | .browser_download_url" | head -n 1)
+        LATEST_URL=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name | contains(\"linux-${ARCH}\")) | .browser_download_url" 2>/dev/null | head -n 1)
     fi
     
     # 如果 jq 失败或未安装，使用 fallback 解析
@@ -248,16 +264,14 @@ install_ech() {
         LATEST_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url" | grep "linux-${ARCH}" | head -n 1 | cut -d '"' -f 4)
     fi
     
+    # 如果 API 完全失败，使用硬编码的最新已知版本
     if [[ -z "$LATEST_URL" || "$LATEST_URL" == "null" ]]; then
-        echo -e "${RED}获取下载链接失败，请检查网络或 GitHub API 限制${PLAIN}"
-        return
+        echo -e "${YELLOW}API 获取失败，使用备用下载链接...${PLAIN}"
+        LATEST_URL="https://github.com/byJoey/ech-wk/releases/download/v1.4/ECHWorkers-linux-${ARCH}-softrouter.tar.gz"
     fi
-
-    # 检测是否在中国
-    if curl -s -m 2 https://www.google.com >/dev/null; then
-        echo -e "${GREEN}网络环境: 国际互联${PLAIN}"
-    else
-        echo -e "${YELLOW}网络环境: 中国大陆 (或无法访问 Google)，使用镜像加速${PLAIN}"
+    
+    # 国内环境添加代理前缀
+    if [ "$IS_CN" -eq 1 ]; then
         # 避免重复添加代理前缀
         if [[ "$LATEST_URL" != *"gh-proxy.org"* ]]; then
             LATEST_URL="https://gh-proxy.org/${LATEST_URL}"
