@@ -119,6 +119,12 @@ restore_config() {
             cp "$LATEST_BACKUP" "$CONF_FILE"
             echo -e "${GREEN}配置已恢复！${PLAIN}"
             load_config
+            create_service
+            read -p "是否立即重启服务生效？[y/N]: " restart_now
+            if [[ "$restart_now" == "y" || "$restart_now" == "Y" ]]; then
+                svc_restart
+                echo -e "${GREEN}服务已重启！${PLAIN}"
+            fi
         fi
     else
         echo -e "${YELLOW}未找到备份文件${PLAIN}"
@@ -129,19 +135,20 @@ restore_config() {
 test_best_ip() {
     echo -e "${YELLOW}正在测速优选IP...${PLAIN}"
     
-    # 默认测试列表
-    TEST_IPS=("www.visa.com.sg" "cf.cdn.xx.kg" "www.cloudflare.com" "speed.cloudflare.com")
+    # 优选域名测试列表
+    TEST_IPS=("saas.sin.fan" "freeyx.cloudflare88.eu.org" "cf.090227.xyz" "cdn.2020111.xyz" "cloudflare.182682.xyz" "bestcf.030101.xyz")
     
-    BEST_TIME=9999
+    BEST_TIME=9999000  # 使用毫秒整数，避免浮点运算
     BEST_IP_RESULT=""
     
     for ip in "${TEST_IPS[@]}"; do
-        TIME=$(curl -o /dev/null -s -w '%{time_total}' --connect-timeout 3 -m 5 "https://${ip}" 2>/dev/null)
-        if [ $? -eq 0 ]; then
-            TIME_MS=$(echo "$TIME * 1000" | bc 2>/dev/null || echo "$TIME")
+        # 使用 curl 测量连接时间（毫秒）
+        TIME_MS=$(curl -o /dev/null -s -w '%{time_total}' --connect-timeout 3 -m 5 "https://${ip}" 2>/dev/null | awk '{printf "%.0f", $1 * 1000}')
+        if [ $? -eq 0 ] && [ ! -z "$TIME_MS" ] && [ "$TIME_MS" != "0" ]; then
             echo -e "  ${ip}: ${GREEN}${TIME_MS}ms${PLAIN}"
-            if (( $(echo "$TIME < $BEST_TIME" | bc -l 2>/dev/null || echo 0) )); then
-                BEST_TIME=$TIME
+            # 纯整数比较，无需 bc
+            if [ "$TIME_MS" -lt "$BEST_TIME" ] 2>/dev/null; then
+                BEST_TIME=$TIME_MS
                 BEST_IP_RESULT=$ip
             fi
         else
@@ -150,19 +157,30 @@ test_best_ip() {
     done
     
     if [ ! -z "$BEST_IP_RESULT" ]; then
-        echo -e "${GREEN}最优IP: $BEST_IP_RESULT${PLAIN}"
+        echo -e "${GREEN}最优IP: $BEST_IP_RESULT (${BEST_TIME}ms)${PLAIN}"
         read -p "是否使用此IP？[y/N]: " confirm
         if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
             BEST_IP="$BEST_IP_RESULT"
             save_config
-            echo -e "${GREEN}已更新配置！${PLAIN}"
+            create_service
+            read -p "是否立即重启服务生效？[y/N]: " restart_now
+            if [[ "$restart_now" == "y" || "$restart_now" == "Y" ]]; then
+                svc_restart
+                echo -e "${GREEN}服务已重启！${PLAIN}"
+            fi
         fi
+    else
+        echo -e "${RED}所有域名测速失败，请检查网络${PLAIN}"
     fi
 }
 
 # 健康检查
 health_check() {
     echo -e "${YELLOW}执行健康检查...${PLAIN}"
+    
+    # 确保配置已加载
+    load_config
+    check_os
     
     # 检查进程
     if svc_is_active; then
@@ -178,12 +196,22 @@ health_check() {
     
     # 检查端口
     CONF_PORT=${LISTEN_ADDR##*:}
-    if command -v ss >/dev/null 2>&1; then
+    if [ -z "$CONF_PORT" ]; then
+        echo -e "  端口监听: ${RED}配置异常 (LISTEN_ADDR 为空)${PLAIN}"
+    elif command -v ss >/dev/null 2>&1; then
         if ss -ln | grep -q ":$CONF_PORT"; then
             echo -e "  端口监听: ${GREEN}正常 (:$CONF_PORT)${PLAIN}"
         else
             echo -e "  端口监听: ${RED}异常${PLAIN}"
         fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -ln | grep -q ":$CONF_PORT"; then
+            echo -e "  端口监听: ${GREEN}正常 (:$CONF_PORT)${PLAIN}"
+        else
+            echo -e "  端口监听: ${RED}异常${PLAIN}"
+        fi
+    else
+        echo -e "  端口监听: ${YELLOW}无法检测 (缺少 ss/netstat)${PLAIN}"
     fi
     
     # 测试代理连接
