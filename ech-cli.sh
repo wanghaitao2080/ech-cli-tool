@@ -194,34 +194,65 @@ health_check() {
         return
     fi
     
-    # 检查端口
-    CONF_PORT=${LISTEN_ADDR##*:}
+    # 检查端口 - 从 LISTEN_ADDR 提取端口号
+    if [ -z "$LISTEN_ADDR" ]; then
+        echo -e "  端口监听: ${RED}配置异常 (LISTEN_ADDR 未设置)${PLAIN}"
+        return
+    fi
+    
+    # 提取端口号（支持 IPv4 和 IPv6 格式）
+    CONF_PORT=$(echo "$LISTEN_ADDR" | grep -oE '[0-9]+$')
     if [ -z "$CONF_PORT" ]; then
-        echo -e "  端口监听: ${RED}配置异常 (LISTEN_ADDR 为空)${PLAIN}"
-    elif command -v ss >/dev/null 2>&1; then
-        if ss -ln | grep -q ":$CONF_PORT"; then
-            echo -e "  端口监听: ${GREEN}正常 (:$CONF_PORT)${PLAIN}"
-        else
-            echo -e "  端口监听: ${RED}异常${PLAIN}"
+        echo -e "  端口监听: ${RED}无法解析端口 (LISTEN_ADDR=$LISTEN_ADDR)${PLAIN}"
+        return
+    fi
+    
+    echo -e "  监听地址: ${CYAN}$LISTEN_ADDR${PLAIN}"
+    
+    # 检查端口是否监听
+    PORT_OK=0
+    if command -v ss >/dev/null 2>&1; then
+        if ss -ln | grep -q ":${CONF_PORT} \|:${CONF_PORT}$"; then
+            PORT_OK=1
         fi
     elif command -v netstat >/dev/null 2>&1; then
-        if netstat -ln | grep -q ":$CONF_PORT"; then
-            echo -e "  端口监听: ${GREEN}正常 (:$CONF_PORT)${PLAIN}"
-        else
-            echo -e "  端口监听: ${RED}异常${PLAIN}"
+        if netstat -ln | grep -q ":${CONF_PORT} \|:${CONF_PORT}$"; then
+            PORT_OK=1
         fi
     else
-        echo -e "  端口监听: ${YELLOW}无法检测 (缺少 ss/netstat)${PLAIN}"
+        echo -e "  端口监听: ${YELLOW}无法检测 (缺少 ss/netstat 命令)${PLAIN}"
+        PORT_OK=2  # 未检测
+    fi
+    
+    if [ "$PORT_OK" -eq 1 ]; then
+        echo -e "  端口监听: ${GREEN}正常 (:$CONF_PORT)${PLAIN}"
+    elif [ "$PORT_OK" -eq 0 ]; then
+        echo -e "  端口监听: ${RED}异常 - 端口 $CONF_PORT 未监听${PLAIN}"
+        return
     fi
     
     # 测试代理连接
-    echo -e "  测试代理..."
-    PROXY_TEST=$(curl -x socks5://127.0.0.1:$CONF_PORT -s -m 10 -o /dev/null -w '%{http_code}' https://www.google.com 2>/dev/null)
-    if [ "$PROXY_TEST" == "200" ] || [ "$PROXY_TEST" == "204" ]; then
-        echo -e "  代理测试: ${GREEN}正常${PLAIN}"
+    echo -e "  测试代理连接..."
+    
+    # 先测试国内站点
+    PROXY_TEST=$(curl -x socks5://127.0.0.1:$CONF_PORT -s -m 5 -o /dev/null -w '%{http_code}' https://www.baidu.com 2>/dev/null)
+    if [ "$PROXY_TEST" == "200" ] || [ "$PROXY_TEST" == "302" ]; then
+        echo -e "  国内连接: ${GREEN}正常${PLAIN}"
     else
-        echo -e "  代理测试: ${RED}失败 (HTTP: $PROXY_TEST)${PLAIN}"
-        echo -e "${YELLOW}建议: 检查服务端配置或网络连接${PLAIN}"
+        echo -e "  国内连接: ${RED}失败 (HTTP: $PROXY_TEST)${PLAIN}"
+    fi
+    
+    # 再测试国外站点
+    PROXY_TEST2=$(curl -x socks5://127.0.0.1:$CONF_PORT -s -m 10 -o /dev/null -w '%{http_code}' https://www.google.com 2>/dev/null)
+    if [ "$PROXY_TEST2" == "200" ] || [ "$PROXY_TEST2" == "204" ]; then
+        echo -e "  国外连接: ${GREEN}正常${PLAIN}"
+    else
+        echo -e "  国外连接: ${RED}失败 (HTTP: $PROXY_TEST2)${PLAIN}"
+        if [ "$PROXY_TEST" != "200" ] && [ "$PROXY_TEST" != "302" ]; then
+            echo -e "${YELLOW}建议: 检查服务端配置或网络连接${PLAIN}"
+        else
+            echo -e "${YELLOW}提示: 国内正常但国外失败，可能是服务端问题${PLAIN}"
+        fi
     fi
 }
 
