@@ -200,7 +200,7 @@ health_check() {
         return
     fi
     
-    # 提取端口号（支持 IPv4 和 IPv6 格式）
+    # 提取端口号
     CONF_PORT=$(echo "$LISTEN_ADDR" | grep -oE '[0-9]+$')
     if [ -z "$CONF_PORT" ]; then
         echo -e "  端口监听: ${RED}无法解析端口 (LISTEN_ADDR=$LISTEN_ADDR)${PLAIN}"
@@ -220,8 +220,7 @@ health_check() {
             PORT_OK=1
         fi
     else
-        echo -e "  端口监听: ${YELLOW}无法检测 (缺少 ss/netstat 命令)${PLAIN}"
-        PORT_OK=2  # 未检测
+        PORT_OK=2
     fi
     
     if [ "$PORT_OK" -eq 1 ]; then
@@ -229,30 +228,63 @@ health_check() {
     elif [ "$PORT_OK" -eq 0 ]; then
         echo -e "  端口监听: ${RED}异常 - 端口 $CONF_PORT 未监听${PLAIN}"
         return
+    else
+        echo -e "  端口监听: ${YELLOW}无法检测${PLAIN}"
     fi
     
-    # 测试代理连接
+    # 检查活跃连接数
+    CONN_COUNT=0
+    if command -v ss >/dev/null 2>&1; then
+        CONN_COUNT=$(ss -an state established | grep -c ":$CONF_PORT " 2>/dev/null || echo 0)
+    elif command -v netstat >/dev/null 2>&1; then
+        CONN_COUNT=$(netstat -an | grep ":$CONF_PORT " | grep -c ESTABLISHED 2>/dev/null || echo 0)
+    fi
+    echo -e "  当前连接: ${CYAN}$CONN_COUNT${PLAIN}"
+    
+    # 测试代理连接 - 使用轻量级请求
     echo -e "  测试代理连接..."
     
-    # 先测试国内站点
-    PROXY_TEST=$(curl -x socks5://127.0.0.1:$CONF_PORT -s -m 5 -o /dev/null -w '%{http_code}' https://www.baidu.com 2>/dev/null)
-    if [ "$PROXY_TEST" == "200" ] || [ "$PROXY_TEST" == "302" ]; then
-        echo -e "  国内连接: ${GREEN}正常${PLAIN}"
+    # 测试 1: 使用 curl 通过代理获取 IP
+    TEST_OK=0
+    
+    # 尝试通过代理访问 httpbin (轻量级，返回快)
+    PROXY_IP=$(curl -x socks5h://127.0.0.1:$CONF_PORT -s -m 8 "https://httpbin.org/ip" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [ ! -z "$PROXY_IP" ]; then
+        echo -e "  代理出口: ${GREEN}$PROXY_IP${PLAIN}"
+        TEST_OK=1
     else
-        echo -e "  国内连接: ${RED}失败 (HTTP: $PROXY_TEST)${PLAIN}"
+        # 备用测试: ip.sb
+        PROXY_IP=$(curl -x socks5h://127.0.0.1:$CONF_PORT -s -m 8 "https://api.ip.sb/ip" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [ ! -z "$PROXY_IP" ]; then
+            echo -e "  代理出口: ${GREEN}$PROXY_IP${PLAIN}"
+            TEST_OK=1
+        fi
     fi
     
-    # 再测试国外站点
-    PROXY_TEST2=$(curl -x socks5://127.0.0.1:$CONF_PORT -s -m 10 -o /dev/null -w '%{http_code}' https://www.google.com 2>/dev/null)
-    if [ "$PROXY_TEST2" == "200" ] || [ "$PROXY_TEST2" == "204" ]; then
-        echo -e "  国外连接: ${GREEN}正常${PLAIN}"
-    else
-        echo -e "  国外连接: ${RED}失败 (HTTP: $PROXY_TEST2)${PLAIN}"
-        if [ "$PROXY_TEST" != "200" ] && [ "$PROXY_TEST" != "302" ]; then
-            echo -e "${YELLOW}建议: 检查服务端配置或网络连接${PLAIN}"
+    if [ "$TEST_OK" -eq 1 ]; then
+        echo -e "  代理测试: ${GREEN}正常${PLAIN}"
+        
+        # 额外测试 Cloudflare
+        CF_TEST=$(curl -x socks5h://127.0.0.1:$CONF_PORT -s -m 5 "https://cloudflare.com/cdn-cgi/trace" 2>/dev/null | grep -c "warp=" || echo 0)
+        if [ "$CF_TEST" -gt 0 ]; then
+            echo -e "  CF 连接: ${GREEN}正常${PLAIN}"
         else
-            echo -e "${YELLOW}提示: 国内正常但国外失败，可能是服务端问题${PLAIN}"
+            echo -e "  CF 连接: ${YELLOW}未知${PLAIN}"
         fi
+    else
+        echo -e "  代理测试: ${RED}失败${PLAIN}"
+        
+        # 诊断：检查是否能连接到代理端口
+        if command -v nc >/dev/null 2>&1; then
+            if echo -e "\x05\x01\x00" | timeout 2 nc 127.0.0.1 $CONF_PORT >/dev/null 2>&1; then
+                echo -e "  端口响应: ${GREEN}正常${PLAIN} (代理可连接但无法建立隧道)"
+                echo -e "${YELLOW}提示: 可能是服务端连接问题，请查看日志${PLAIN}"
+            else
+                echo -e "  端口响应: ${RED}无响应${PLAIN}"
+            fi
+        fi
+        
+        echo -e "${YELLOW}建议: 运行 'journalctl -u ech-workers -n 50' 查看详细日志${PLAIN}"
     fi
 }
 
@@ -632,7 +664,7 @@ view_logs() {
 }
 
 # 脚本版本
-SCRIPT_VER="v1.1.4"
+SCRIPT_VER="v1.1.5"
 
 # 版本号比较函数：判断 $1 是否大于 $2
 # 返回 0 表示 $1 > $2，返回 1 表示 $1 <= $2
