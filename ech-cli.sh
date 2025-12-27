@@ -282,11 +282,11 @@ health_check() {
     fi
     
     if [ "$TEST_OK" -eq 1 ]; then
-        echo -e "  代理出口: ${GREEN}$PROXY_IP${PLAIN}"
+        echo -e "  优选出口: ${GREEN}$PROXY_IP${PLAIN}"
         if [ ! -z "$IP_INFO" ]; then
             echo -e "  IP 归属: ${CYAN}$IP_INFO${PLAIN}"
         fi
-        echo -e "  代理测试: ${GREEN}正常${PLAIN}"
+        echo -e "  优选测试: ${GREEN}正常${PLAIN}"
         
         # 额外测试 Cloudflare CDN 站点（通过 ProxyIP 访问）
         echo -e "  ${YELLOW}--- CF 反代测试 ---${PLAIN}"
@@ -310,7 +310,7 @@ health_check() {
             echo -e "  ${YELLOW}提示: 检查 ProxyIP 配置是否正确${PLAIN}"
         fi
     else
-        echo -e "  代理测试: ${RED}失败${PLAIN}"
+        echo -e "  优选测试: ${RED}失败${PLAIN}"
         
         # 诊断：检查是否能连接到代理端口
         if command -v nc >/dev/null 2>&1; then
