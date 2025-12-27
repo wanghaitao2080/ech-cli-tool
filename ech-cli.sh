@@ -263,7 +263,10 @@ health_check() {
             # 构建归属地信息
             if [ ! -z "$IP_COUNTRY" ]; then
                 IP_INFO="$IP_COUNTRY"
-                [ ! -z "$IP_CITY" ] && IP_INFO="$IP_INFO $IP_CITY"
+                # 只有当城市与国家不同时才追加城市
+                if [ ! -z "$IP_CITY" ] && [ "$IP_CITY" != "$IP_COUNTRY" ]; then
+                    IP_INFO="$IP_INFO $IP_CITY"
+                fi
             fi
             [ ! -z "$IP_ISP" ] && IP_INFO="$IP_INFO | $IP_ISP"
             [ -z "$IP_ISP" ] && [ ! -z "$IP_ORG" ] && IP_INFO="$IP_INFO | $IP_ORG"
