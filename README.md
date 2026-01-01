@@ -1,4 +1,4 @@
-# ECH Workers Client CLI Tool
+# ECH Tools
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -105,17 +105,17 @@
 
 ```bash
 # 方法一：直接下载（海外或网络通畅）
-wget --no-check-certificate -O ech-cli.sh https://raw.githubusercontent.com/lzban8/ech-cli-tool/main/ech-cli.sh
+wget --no-check-certificate -O ech-tools.sh https://raw.githubusercontent.com/lzban8/ech-tools/main/ech-tools.sh
 
 # 方法二：使用 gh-proxy 镜像下载（国内推荐）
-wget --no-check-certificate -O ech-cli.sh https://gh-proxy.org/https://raw.githubusercontent.com/lzban8/ech-cli-tool/main/ech-cli.sh
+wget --no-check-certificate -O ech-tools.sh https://gh-proxy.org/https://raw.githubusercontent.com/lzban8/ech-tools/main/ech-tools.sh
 
 # 方法三：手动上传
-# 您也可以先下载 ech-cli.sh 到本地，然后上传到服务器 (如 /root 目录)
+# 您也可以先下载 ech-tools.sh 到本地，然后上传到服务器 (如 /root 目录)
 
 # 授权并运行
-chmod +x ech-cli.sh
-./ech-cli.sh
+chmod +x ech-tools.sh
+./ech-tools.sh
 ```
 
 > 💡 **提示**：如果遇到 SSL 证书错误，请使用 `--no-check-certificate` 参数，或先安装 CA 证书：`opkg install ca-bundle ca-certificates`

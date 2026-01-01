@@ -16,10 +16,18 @@ PLAIN='\033[0m'
 # 变量定义
 REPO_OWNER="byJoey"
 REPO_NAME="ech-wk"
-BIN_PATH="/usr/local/bin/ech-workers"
+
+# 获取脚本运行目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ECH_DIR="${SCRIPT_DIR}/ech-tools"
+
+# 安装路径（使用脚本运行目录下的 ech-tools 文件夹）
+BIN_PATH="${ECH_DIR}/ech-workers"
+CONF_FILE="${ECH_DIR}/ech-workers.conf"
+
+# 服务文件路径（保持在系统目录）
 SERVICE_FILE_SYSTEMD="/etc/systemd/system/ech-workers.service"
 SERVICE_FILE_OPENWRT="/etc/init.d/ech-workers"
-CONF_FILE="/etc/ech-workers.conf"
 
 # 全局变量：是否为 OpenWrt
 IS_OPENWRT=0
@@ -79,8 +87,8 @@ install_dependencies() {
         echo -e "${RED}无法识别的系统，请手动安装 curl, wget, tar, jq${PLAIN}"
     fi
     
-    # 确保 /usr/local/bin 存在
-    mkdir -p /usr/local/bin
+    # 确保 ech-tools 目录存在
+    mkdir -p "$ECH_DIR"
 }
 
 # 获取配置
@@ -528,9 +536,11 @@ install_ech() {
 
 # 创建快捷指令
 create_shortcut() {
+    # 获取脚本的绝对路径
+    SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
     cat > /usr/bin/ech <<EOF
 #!/bin/bash
-bash /root/ech-cli.sh
+bash "${SCRIPT_PATH}"
 EOF
     chmod +x /usr/bin/ech
     echo -e "${GREEN}快捷指令 'ech' 已创建，以后输入 ech 即可启动此脚本！${PLAIN}"
@@ -730,9 +740,9 @@ check_script_update() {
     
     if [ "$CACHE_EXPIRED" -eq 1 ]; then
         # 同步获取版本（最多等待 3 秒）
-        CHECK_URL="https://raw.githubusercontent.com/lzban8/ech-cli-tool/main/ech-cli.sh"
+        CHECK_URL="https://raw.githubusercontent.com/lzban8/ech-tools/main/ech-tools.sh"
         if ! curl -s -m 2 --head https://raw.githubusercontent.com >/dev/null 2>&1; then
-            CHECK_URL="https://gh-proxy.org/https://raw.githubusercontent.com/lzban8/ech-cli-tool/main/ech-cli.sh"
+            CHECK_URL="https://gh-proxy.org/https://raw.githubusercontent.com/lzban8/ech-tools/main/ech-tools.sh"
         fi
         
         REMOTE_VERSION=$(curl -s -m 3 "$CHECK_URL" 2>/dev/null | grep 'SCRIPT_VER="' | head -n 1 | cut -d '"' -f 2)
@@ -759,7 +769,7 @@ check_script_update() {
 
 # 更新脚本
 update_script() {
-    wget --no-check-certificate -O /root/ech-cli.sh "https://raw.githubusercontent.com/lzban8/ech-cli-tool/main/ech-cli.sh" && chmod +x /root/ech-cli.sh
+    wget --no-check-certificate -O /root/ech-tools.sh "https://raw.githubusercontent.com/lzban8/ech-tools/main/ech-tools.sh" && chmod +x /root/ech-tools.sh
     echo -e "${GREEN}脚本更新成功！请重新运行脚本。${PLAIN}"
     exit 0
 }
