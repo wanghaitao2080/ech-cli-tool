@@ -19,12 +19,34 @@ export default {
       var proxyIP = '';
       var kvReady = false;
 
+      // 使用 KV（带缓存，减少 KV 读取次数）
       if (env.KV) {
         kvReady = true;
-        var kvToken = await env.KV.get('TOKEN');
-        var kvProxyIP = await env.KV.get('PROXYIP');
-        if (kvToken) token = kvToken;
-        if (kvProxyIP) proxyIP = kvProxyIP;
+        const cache = caches.default;
+        const cacheKey = new Request('https://ech-kv-cache/config');
+
+        // 尝试从缓存读取
+        let cachedResponse = await cache.match(cacheKey);
+
+        if (cachedResponse) {
+          // 缓存命中，不读 KV
+          const cachedData = await cachedResponse.json();
+          if (cachedData.token) token = cachedData.token;
+          if (cachedData.proxyIP) proxyIP = cachedData.proxyIP;
+        } else {
+          // 缓存未命中，从 KV 读取
+          const kvToken = await env.KV.get('TOKEN');
+          const kvProxyIP = await env.KV.get('PROXYIP');
+          if (kvToken) token = kvToken;
+          if (kvProxyIP) proxyIP = kvProxyIP;
+
+          // 写入缓存（1 小时过期）
+          const cacheData = JSON.stringify({ token: kvToken || '', proxyIP: kvProxyIP || '' });
+          const cacheResponse = new Response(cacheData, {
+            headers: { 'Cache-Control': 'max-age=3600', 'Content-Type': 'application/json' }
+          });
+          ctx.waitUntil(cache.put(cacheKey, cacheResponse));
+        }
       }
 
       const url = new URL(request.url);
@@ -78,6 +100,12 @@ export default {
             }
             if (body.token !== undefined) await env.KV.put('TOKEN', body.token);
             if (body.proxyIP !== undefined) await env.KV.put('PROXYIP', body.proxyIP);
+
+            // 清除配置缓存，确保新配置立即生效
+            const cache = caches.default;
+            const cacheKey = new Request('https://ech-kv-cache/config');
+            ctx.waitUntil(cache.delete(cacheKey));
+
             return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
           } catch (e) {
             return new Response(JSON.stringify({ error: e.message || '操作失败' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
