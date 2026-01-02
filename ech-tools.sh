@@ -20,6 +20,8 @@ REPO_NAME="ech-wk"
 # 获取脚本运行目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ECH_DIR="${SCRIPT_DIR}/ech-tools"
+# 本地优选域名列表文件
+CUSTOM_LIST="${ECH_DIR}/custom_domains.txt"
 
 # 安装路径（使用脚本运行目录下的 ech-tools 文件夹）
 BIN_PATH="${ECH_DIR}/ech-workers"
@@ -109,71 +111,535 @@ load_config() {
 
 # 备份配置
 
-# 优选域名测速
-test_best_ip() {
-    echo -e "${YELLOW}正在测速优选域名...${PLAIN}"
+# 优选域名/IP测速
+init_custom_domains_if_needed() {
+    # 默认列表
+    local DEFAULT_DOMAINS=(
+        "ip.164746.xyz"
+        "cdn.2020111.xyz"
+        "bestcf.top"
+        "cfip.cfcdn.vip"
+        "freeyx.cloudflare88.eu.org"
+        "cfip.xxxxxxxx.tk"
+        "saas.sin.fan"
+        "cf.090227.xyz"
+        "cloudflare.182682.xyz"
+        "bestcf.030101.xyz"
+    )
+
+    if [ ! -s "$CUSTOM_LIST" ]; then
+        echo -e "${YELLOW}检测到本地列表为空，正在初始化默认优选域名...${PLAIN}"
+        for domain in "${DEFAULT_DOMAINS[@]}"; do
+            echo "$domain" >> "$CUSTOM_LIST"
+        done
+        echo -e "${GREEN}初始化完成${PLAIN}"
+    fi
+}
+# 添加自定义域名/IP (支持批量，逗号或空格分隔)
+add_custom_domain() {
+    echo -e "${YELLOW}请输入要添加的域名或IP (支持批量，用逗号或空格分隔):${PLAIN}"
+    read -p "> " input_str
     
-    # 优选域名测试列表
-    TEST_IPS=("ip.164746.xyz" "cdn.2020111.xyz" "bestcf.top" "cfip.cfcdn.vip" "freeyx.cloudflare88.eu.org" "cfip.xxxxxxxx.tk" "saas.sin.fan" "cf.090227.xyz" "cloudflare.182682.xyz" "bestcf.030101.xyz")
+    if [ -z "$input_str" ]; then
+        echo "已取消"
+        return
+    fi
     
-    # 存储测速结果
-    declare -a RESULT_IPS
-    declare -a RESULT_TIMES
-    BEST_TIME=9999000
-    BEST_INDEX=-1
-    INDEX=0
+    # 将逗号替换为空格，以便按空格分割
+    local clean_input=${input_str//,/ }
+    # 转为数组
+    local new_domains=($clean_input)
     
-    for ip in "${TEST_IPS[@]}"; do
-        INDEX=$((INDEX + 1))
-        # 使用 curl 测量连接时间（毫秒）
-        TIME_MS=$(curl -o /dev/null -s -w '%{time_total}' --connect-timeout 3 -m 5 "https://${ip}" 2>/dev/null | awk '{printf "%.0f", $1 * 1000}')
-        if [ $? -eq 0 ] && [ ! -z "$TIME_MS" ] && [ "$TIME_MS" != "0" ]; then
-            echo -e "  [${INDEX}] ${ip}: ${GREEN}${TIME_MS}ms${PLAIN}"
-            RESULT_IPS+=("$ip")
-            RESULT_TIMES+=("$TIME_MS")
-            # 纯整数比较
-            if [ "$TIME_MS" -lt "$BEST_TIME" ] 2>/dev/null; then
-                BEST_TIME=$TIME_MS
-                BEST_INDEX=${#RESULT_IPS[@]}
-            fi
+    local added_count=0
+    for domain in "${new_domains[@]}"; do
+        if [ -z "$domain" ]; then continue; fi
+        
+        # 简单的去重检查
+        if [ -f "$CUSTOM_LIST" ] && grep -q "^${domain}$" "$CUSTOM_LIST"; then
+            echo -e "${RED}已存在: ${domain}${PLAIN}"
         else
-            echo -e "  [${INDEX}] ${ip}: ${RED}超时${PLAIN}"
+            echo "$domain" >> "$CUSTOM_LIST"
+            echo -e "${GREEN}添加成功: ${domain}${PLAIN}"
+            ((added_count++))
         fi
     done
     
-    if [ ${#RESULT_IPS[@]} -eq 0 ]; then
-        echo -e "${RED}所有域名测速失败，请检查网络${PLAIN}"
+    if [ $added_count -gt 0 ]; then
+        echo -e "${GREEN}共添加 $added_count 个条目${PLAIN}"
+    fi
+}
+
+# 删除自定义域名/IP (支持批量，逗号或空格分隔)
+delete_custom_domain() {
+    
+    if [ ! -f "$CUSTOM_LIST" ] || [ ! -s "$CUSTOM_LIST" ]; then
+        echo -e "${RED}自定义列表为空或文件不存在！${PLAIN}"
         return
     fi
     
-    # 显示最优结果
-    BEST_IP_RESULT="${RESULT_IPS[$((BEST_INDEX - 1))]}"
-    echo -e ""
-    echo -e "${GREEN}推荐最优: $BEST_IP_RESULT (${BEST_TIME}ms)${PLAIN}"
-    echo -e ""
-    read -p "是否使用推荐的最优域名？[y/N/编号]: " confirm
+    echo -e "${YELLOW}当前自定义列表:${PLAIN}"
+    # 显示带行号的列表
+    nl -w2 -s". " "$CUSTOM_LIST"
     
-    # 处理用户输入
-    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        SELECTED_IP="$BEST_IP_RESULT"
-    elif [[ "$confirm" =~ ^[0-9]+$ ]]; then
-        # 用户输入了编号
-        if [ "$confirm" -ge 1 ] && [ "$confirm" -le ${#RESULT_IPS[@]} ]; then
-            SELECTED_IP="${RESULT_IPS[$((confirm - 1))]}"
-            echo -e "${GREEN}已选择: $SELECTED_IP${PLAIN}"
+    echo -e "${YELLOW}--------------------------------${PLAIN}"
+    echo -e "请输入要删除的序号，支持批量 (示例: 1,3,5 或 1 3 5)"
+    read -p "输入 0 或回车返回: " input_str
+    
+    if [ -z "$input_str" ] || [[ "$input_str" == "0" ]]; then
+        return
+    fi
+    
+    # 将逗号替换为空格
+    local clean_input=${input_str//,/ }
+    local del_nums=($clean_input)
+    
+    if [ ${#del_nums[@]} -eq 0 ] || [[ "${del_nums[0]}" == "0" ]]; then
+        return
+    fi
+    
+    # 验证输入有效性
+    local total_lines=$(wc -l < "$CUSTOM_LIST")
+    local valid_nums=()
+    
+    for num in "${del_nums[@]}"; do
+        if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -gt 0 ] && [ "$num" -le "$total_lines" ]; then
+            valid_nums+=("$num")
         else
-            echo -e "${RED}无效编号${PLAIN}"
+            echo -e "${RED}忽略无效序号: $num${PLAIN}"
+        fi
+    done
+    
+    if [ ${#valid_nums[@]} -eq 0 ]; then
+        echo -e "${RED}无有效操作${PLAIN}"
+        return
+    fi
+    
+    # 排序 (降序)，防止删除前面的行导致后面序号错位
+    # 使用 sort -rn 进行数字倒序排序
+    local sorted_nums=($(printf "%s\n" "${valid_nums[@]}" | sort -rn | uniq))
+    
+    echo -e "${YELLOW}正在删除 ${#sorted_nums[@]} 个条目...${PLAIN}"
+    
+    for num in "${sorted_nums[@]}"; do
+        del_content=$(sed -n "${num}p" "$CUSTOM_LIST")
+        
+        # 执行删除
+        if sed --version 2>/dev/null | grep -q GNU; then
+            sed -i "${num}d" "$CUSTOM_LIST"
+        else
+            sed -i '' "${num}d" "$CUSTOM_LIST"
+        fi
+        echo -e "${GREEN}已删除 [${num}]: $del_content${PLAIN}"
+    done
+    
+    echo -e "${GREEN}批量删除完成${PLAIN}"
+}
+
+# 优选域名/IP 管理菜单
+manage_best_ip_menu() {
+    # 进入菜单时先确保列表已初始化
+    init_custom_domains_if_needed
+    
+    while true; do
+        echo -e "========================="
+        echo -e "    优选域名/IP 管理"
+        echo -e "========================="
+        echo -e " ${GREEN}1.${PLAIN} 添加自定义域名/IP"
+        echo -e " ${GREEN}2.${PLAIN} 删除自定义域名/IP"
+        echo -e " ${GREEN}3.${PLAIN} 查看当前列表 (自定义)"
+        echo -e " ${GREEN}4.${PLAIN} 开始测速"
+        echo -e " ${GREEN}5.${PLAIN} 返回主菜单"
+        echo -e "-------------------------"
+        read -p "请输入选择 [1-5]: " sub_choice
+        
+        case $sub_choice in
+            1) 
+                add_custom_domain 
+                read -p "按回车键继续..."
+                ;;
+            2) 
+                delete_custom_domain 
+                read -p "按回车键继续..."
+                ;;
+            3)
+                echo -e "${YELLOW}--- 自定义列表内容 ---${PLAIN}"
+                if [ -f "$CUSTOM_LIST" ]; then
+                    cat "$CUSTOM_LIST"
+                else
+                    echo "（空）"
+                fi
+                echo -e "${YELLOW}----------------------${PLAIN}"
+                read -p "按回车键继续..."
+                ;;
+            4) 
+                test_best_ip 
+                read -p "按回车键继续..."
+                ;;
+            5) return ;;
+            *) echo -e "${RED}无效选择${PLAIN}" ;;
+        esac
+    done
+}
+test_best_ip() {
+    echo -e "${YELLOW}============================================${PLAIN}"
+    echo -e "${YELLOW}       优选域名/IP测速${PLAIN}"
+    echo -e "${YELLOW}============================================${PLAIN}"
+    
+    
+    # ---------------- 1. 准备域名列表 ----------------
+    
+    
+    
+    # [列表初始化已移动到菜单入口处统一处理]
+
+    echo -e "${CYAN}[1/3] 正在加载域名列表...${PLAIN}"
+    
+    declare -a TEST_IPS
+    
+    # 加载列表 (仅读取 custom_domains.txt)
+    if [ -f "$CUSTOM_LIST" ]; then
+        echo -e "加载列表: $CUSTOM_LIST"
+        mapfile -t CUSTOM_IPS < <(grep -v '^#' "$CUSTOM_LIST" | grep -v '^$' | sed 's/\r$//')
+        TEST_IPS+=("${CUSTOM_IPS[@]}")
+    else
+        echo -e "${RED}错误：列表文件不存在${PLAIN}"
+        return
+    fi
+ 
+    # 如果总数为空
+    if [ ${#TEST_IPS[@]} -eq 0 ]; then
+        echo -e "${RED}错误：列表中没有有效域名${PLAIN}"
+        return
+    fi
+    
+    # 去重
+    mapfile -t TEST_IPS < <(printf "%s\n" "${TEST_IPS[@]}" | awk '!a[$0]++')
+    
+    COUNT=${#TEST_IPS[@]}
+    echo -e "共加载 ${GREEN}${COUNT}${PLAIN} 个待测域名"
+    echo -e ""
+    
+    # ---------------- 2. 全量下载测速 ----------------
+    
+    # 调整并发数至 2 (因为每个节点内部会有 4 线程, 总线程=8, 避免软路由卡死)
+    MAX_CONCURRENT=2
+    echo -e "${CYAN}[2/2] 正在进行全量测速 (${MAX_CONCURRENT}节点并发 x 4线程下载)...${PLAIN}"
+    echo -e "注意: 多线程测速较耗时且占用带宽,请耐心等待..."
+    
+    RESULT_FILE="/tmp/ech_speed_test_$$"
+    > "$RESULT_FILE"
+    
+    # 进度条函数
+    show_progress() {
+        local total=$1
+        local pid=$2
+        local file=$3
+        local delay=0.5
+        local spin='-\|/'
+        local i=0
+        
+        # 隐藏光标
+        tput civis 2>/dev/null
+        
+        while kill -0 $pid 2>/dev/null; do
+            local done_cnt=0
+            [ -f "$file" ] && done_cnt=$(wc -l < "$file")
+            
+            # 即使文件行数没变，也刷新一下旋转特效
+            local percent=0
+            if [ $total -gt 0 ]; then
+                percent=$((done_cnt * 100 / total))
+            fi
+            
+            # 绘制进度条 [####....]
+            local bars=$((percent / 2)) # 50个字符宽
+            local spaces=$((50 - bars))
+            
+            # 使用 printf 动态生成填充
+            local bar_str=$(printf "%${bars}s" | tr ' ' '#')
+            local space_str=$(printf "%${spaces}s" | tr ' ' '.')
+            
+            # 旋转字符
+            local temp=${spin#?}
+            spin=$temp${spin%"$temp"}
+            local char=${spin:0:1}
+            
+            # 打印: \r 清除行首
+            printf "\r[${GREEN}%s${PLAIN}%s] %d%% (%d/%d) %s " "$bar_str" "$space_str" "$percent" "$done_cnt" "$total" "$char"
+            
+            # 防止过快刷新
+            sleep $delay
+            
+            # 如果已完成，跳出循环
+            if [ $done_cnt -ge $total ]; then break; fi
+        done
+        
+        # 补全最后一次显示为 100%
+        printf "\r[${GREEN}%s${PLAIN}] 100%% (%d/%d) DONE \n" "$(printf "%50s" | tr ' ' '#')" "$total" "$total"
+        
+        # 恢复光标
+        tput cnorm 2>/dev/null
+    }
+    
+    test_single_ip() {
+        local ip=$1
+        local idx=$2
+        
+        # 检测是否为 IPv6 地址 (包含 : 且不是纯 IPv4)
+        local IS_IPV6=0
+        if [[ "$ip" == *:* ]] && ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IS_IPV6=1
+        fi
+        
+        # 1. 尝试获取节点信息 (快速请求)
+        local colo="N/A"
+        if [ "$IS_IPV6" -eq 1 ]; then
+            colo=$(curl -s -m 2 "http://[${ip}]/cdn-cgi/trace" 2>/dev/null | grep "colo=" | cut -d'=' -f2)
+        else
+            colo=$(curl -s -m 2 "http://${ip}/cdn-cgi/trace" 2>/dev/null | grep "colo=" | cut -d'=' -f2)
+        fi
+        [ -z "$colo" ] && colo="N/A"
+        
+        # 2. 丢包测试 (Ping) - IPv6 需要使用 ping6 或 ping -6
+        local LOSS="100%"
+        local PING_RES
+        if [ "$IS_IPV6" -eq 1 ]; then
+            # 尝试 ping6 或 ping -6
+            if command -v ping6 >/dev/null 2>&1; then
+                PING_RES=$(ping6 -c 4 -i 0.2 -W 2 "$ip" 2>&1)
+            else
+                PING_RES=$(ping -6 -c 4 -i 0.2 -W 2 "$ip" 2>&1)
+            fi
+        else
+            PING_RES=$(ping -c 4 -i 0.2 -W 2 "$ip" 2>&1)
+        fi
+        if [[ $? -eq 0 ]]; then
+            LOSS=$(echo "$PING_RES" | grep -oP '\d+(?=% packet loss)' | head -n1)
+            [ -z "$LOSS" ] && LOSS="0"
+            LOSS="${LOSS}%"
+        else
+            LOSS="100%"
+        fi
+        
+        # 3. 4线程并发下载测速 (100MB x 4 = 400MB total cap, but limit time)
+        # 为了平衡速度, 每个线程 50MB, 超时 15秒 (全量不需要测 400MB 那么大,太慢)
+        local THREAD_BYTES=50000000
+        local THREAD_TIMEOUT=15
+        
+        local CURL_PREFIX="curl"
+        # 优化 curl 构造逻辑: 纯 IP 优先使用 --resolve (兼容性最稳), 域名才用 --connect-to
+        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # IPv4
+            CURL_PREFIX="curl --resolve speed.cloudflare.com:443:${ip}"
+        elif [ "$IS_IPV6" -eq 1 ]; then
+            # IPv6 - 使用 --resolve 并用方括号包裹
+            CURL_PREFIX="curl -6 --resolve speed.cloudflare.com:443:[${ip}]"
+        elif curl --help all 2>&1 | grep -q "connect-to"; then
+            # 域名
+            CURL_PREFIX="curl --connect-to speed.cloudflare.com:443:${ip}:443"
+        fi
+        local TEST_URL="https://speed.cloudflare.com/__down?bytes=${THREAD_BYTES}"
+        
+        # 定义输出格式: HTTP码|TCP延迟|速度
+        local OPTS="-L -o /dev/null -s -w %{http_code}|%{time_connect}|%{speed_download} --connect-timeout 5 -m ${THREAD_TIMEOUT}"
+        
+        # 启动 4 个线程
+        local pids=""
+        local tmp_base="/tmp/ech_thread_${$}_${idx}"
+        
+        for t in 1 2 3 4; do
+            ($CURL_PREFIX $OPTS "$TEST_URL" > "${tmp_base}_${t}" 2>/dev/null) &
+            pids="$pids $!"
+        done
+        wait $pids
+        
+        # 汇总结果
+        # 需要取: 任意一个成功的 HTTP code (200), 最小的 TCP latency, 以及 总 Speed
+        local final_code="000"
+        local min_tcp=9999
+        local total_speed=0
+        local success_cnt=0
+        
+        for t in 1 2 3 4; do
+            if [ -f "${tmp_base}_${t}" ]; then
+                local res=$(cat "${tmp_base}_${t}")
+                if [ ! -z "$res" ]; then
+                    local code=$(echo "$res" | cut -d'|' -f1)
+                    local tcp=$(echo "$res" | cut -d'|' -f2)
+                    local spd=$(echo "$res" | cut -d'|' -f3)
+                    
+                    if [ "$code" == "200" ]; then
+                        success_cnt=$((success_cnt + 1))
+                        final_code="200"
+                        # 找最小延迟
+                        # awk 比较浮点数
+                        local is_smaller=$(awk -v a="$tcp" -v b="$min_tcp" 'BEGIN {print (a<b)?1:0}')
+                        if [ "$is_smaller" -eq 1 ]; then min_tcp=$tcp; fi
+                        
+                        # 累加速度
+                        total_speed=$(awk -v a="$total_speed" -v b="$spd" 'BEGIN {printf "%.0f", a+b}')
+                    fi
+                fi
+                rm -f "${tmp_base}_${t}"
+            fi
+        done
+        
+        if [ "$final_code" == "200" ] && [ "$success_cnt" -gt 0 ]; then
+             # 计算延迟 (秒 -> 毫秒)
+             local latency=$(awk -v t="$min_tcp" 'BEGIN {printf "%.0f", t * 1000}')
+             
+             # 计算速度 (Bps -> MB/s)
+             local speed_mb=$(awk -v speed="$total_speed" 'BEGIN {printf "%.2f", speed / 1024 / 1024}')
+             
+             # 输出: idx|ip|latency|speed_mb|colo|loss
+             echo "${idx}|${ip}|${latency}|${speed_mb}|${colo}|${LOSS}" >> "$RESULT_FILE"
+        else
+             # 失败
+             echo "${idx}|${ip}|99999|0.00|${colo}|${LOSS}" >> "$RESULT_FILE"
+        fi
+    }
+    
+    # 启动进度条 (后台运行)
+    # 传入当前Shell PID，以便在Shell退出时进度条也能退出
+    show_progress "$COUNT" "$$" "$RESULT_FILE" &
+    PID_PROGRESS=$!
+    
+    # 动态并发执行
+    INDEX=0
+    for ip in "${TEST_IPS[@]}"; do
+        INDEX=$((INDEX + 1))
+        test_single_ip "$ip" "$INDEX" &
+        
+        # 动态控制并发数: 如果后台任务数 >= MAX，则等待
+        while [ $(jobs -r | wc -l) -ge $MAX_CONCURRENT ]; do
+            sleep 0.2
+        done
+    done
+    wait
+    
+    # 确保进度条结束
+    sleep 0.5
+    kill "$PID_PROGRESS" 2>/dev/null
+    wait "$PID_PROGRESS" 2>/dev/null
+    
+    echo -e " 完成"
+    echo -e ""
+    
+    # 解析结果并排序 (按速度倒序)
+    declare -a SORTED_RESULTS
+    # 排序逻辑: 按第4列(速度)数字倒序, 然后按第3列(延迟)数字升序
+    mapfile -t SORTED_RESULTS < <(sort -t'|' -k4,4nr -k3,3n "$RESULT_FILE")
+    
+    # ---------------- 3. 显示结果 ----------------
+    
+    echo -e "${YELLOW}---------------------------------------------------------------------------------${PLAIN}"
+    printf "${CYAN}%-4s %-40s %-10s %-8s %-10s %-12s${PLAIN}\n" "排名" "域名/IP" "节点" "丢包" "延迟(TCP)" "速度(4线程)"
+    echo -e "${YELLOW}---------------------------------------------------------------------------------${PLAIN}"
+    
+    declare -a TOP_IPS
+    RANK=0
+    BEST_IP_FINAL=""
+    BEST_INFO_FINAL=""
+    
+    for line in "${SORTED_RESULTS[@]}"; do
+        IFS='|' read -r idx ip latency speed colo loss <<< "$line"
+        RANK=$((RANK + 1))
+        
+        # 速度颜色
+        raw_speed=$(awk -v s="$speed" 'BEGIN {print int(s * 100)}')
+        if [ "$raw_speed" -ge 500 ]; then # 5MB/s
+            SPEED_COLOR="${GREEN}"
+        elif [ "$raw_speed" -ge 100 ]; then # 1MB/s
+            SPEED_COLOR="${YELLOW}"
+        else
+            SPEED_COLOR="${RED}"
+        fi
+        
+        if [ "$speed" == "0.00" ]; then
+            SPEED_VAL="失败"
+            SPEED_COLOR="${RED}"
+            latency="-"
+        else
+            SPEED_VAL="${speed} MB/s"
+        fi
+        
+        # 丢包颜色
+        LOSS_VAL="${loss}"
+        if [[ "$loss" == "0%" ]]; then
+            LOSS_COLOR="${GREEN}"
+        elif [[ "$loss" == "100%" ]]; then
+            LOSS_COLOR="${RED}"
+        else
+            LOSS_COLOR="${YELLOW}"
+        fi
+
+        # 延迟颜色
+        if [ "$latency" == "-" ]; then
+             LAT_COLOR="${RED}"
+        elif [ "$latency" -lt 100 ]; then # 100ms 以内绿色
+             LAT_COLOR="${GREEN}"
+             latency="${latency}ms"
+        elif [ "$latency" -lt 200 ]; then
+             LAT_COLOR="${YELLOW}"
+             latency="${latency}ms"
+        else
+             LAT_COLOR="${RED}"
+             latency="${latency}ms"
+        fi
+
+        printf "${SPEED_COLOR}%-4s${PLAIN} %-40s %-10s ${LOSS_COLOR}%-8s${PLAIN} ${LAT_COLOR}%-10s${PLAIN} ${SPEED_COLOR}%-12s${PLAIN}\n" \
+            "${RANK}" "${ip}" "${colo}" "${LOSS_VAL}" "${latency}" "${SPEED_VAL}"
+            
+        TOP_IPS+=("$ip")
+        
+        # 记录第一名作为推荐
+        if [ "$RANK" -eq 1 ]; then
+            if [ "$speed" != "0.00" ]; then
+                BEST_IP_FINAL="$ip"
+                BEST_INFO_FINAL="${speed} MB/s (4线程)"
+            fi
+        fi
+    done
+    
+    echo -e "${YELLOW}---------------------------------------------------------------------------------${PLAIN}"
+    rm -f "$RESULT_FILE"
+    
+    if [ -z "$BEST_IP_FINAL" ]; then
+        echo -e "${RED}所有域名测速失败${PLAIN}"
+        return
+    fi
+    
+    echo -e ""
+    echo -e "${GREEN}★ 智能推荐: ${BEST_IP_FINAL} [${BEST_INFO_FINAL}]${PLAIN}"
+    echo -e ""
+    
+    # 允许选择任意排名
+    echo -e "${CYAN}提示: 输入 y 使用推荐 / 输入排名编号 (如 1, 2...) / 回车取消${PLAIN}"
+    read -p "请选择: " confirm
+    
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        SELECTED_IP="$BEST_IP_FINAL"
+    elif [[ "$confirm" =~ ^[0-9]+$ ]]; then
+        idx=$((confirm - 1))
+        # 检查索引是否有效
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt ${#TOP_IPS[@]} ]; then
+            SELECTED_IP="${TOP_IPS[$idx]}"
+        else
+            echo -e "${RED}编号无效${PLAIN}"
             return
         fi
     else
-        echo -e "${YELLOW}已取消，可在「修改配置」中自定义优选域名${PLAIN}"
+        echo -e "${YELLOW}已取消${PLAIN}"
         return
     fi
     
-    # 应用选择
+    echo -e "${GREEN}已选择: ${SELECTED_IP}${PLAIN}"
+    
+    # 应用配置
     BEST_IP="$SELECTED_IP"
     save_config
     create_service
+    
     read -p "是否立即重启服务生效？[y/N]: " restart_now
     if [[ "$restart_now" == "y" || "$restart_now" == "Y" ]]; then
         svc_restart
@@ -695,7 +1161,7 @@ view_logs() {
 }
 
 # 脚本版本
-SCRIPT_VER="v1.2.0"
+SCRIPT_VER="v1.3.0"
 
 # 版本号比较函数：判断 $1 是否大于 $2
 # 返回 0 表示 $1 > $2，返回 1 表示 $1 <= $2
@@ -882,7 +1348,7 @@ show_menu() {
     echo -e " ${GREEN}6.${PLAIN} 重启服务"
     echo -e " ${GREEN}7.${PLAIN} 查看日志"
     echo -e " ${GREEN}8.${PLAIN} 状态检查"
-    echo -e " ${GREEN}9.${PLAIN} 优选域名测速"
+    echo -e " ${GREEN}9.${PLAIN} 优选域名/IP"
     echo -e " ${GREEN}10.${PLAIN} 卸载客户端"
     echo -e " ${GREEN}11.${PLAIN} 创建快捷指令"
     echo -e " ${GREEN}12.${PLAIN} 彻底卸载"
@@ -899,7 +1365,7 @@ show_menu() {
         6) svc_restart && echo -e "${GREEN}已重启${PLAIN}" ;;
         7) view_logs ;;
         8) status_check ;;
-        9) test_best_ip ;;
+        9) manage_best_ip_menu ;;
         10) 
             svc_stop
             svc_disable
